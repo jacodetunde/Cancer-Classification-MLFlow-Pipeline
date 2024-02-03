@@ -17,19 +17,6 @@ pipeline {
             }
         }
 
-        stage('Continuous Integration') {
-            steps {
-                script {
-                    sh """
-                        python3 -m venv cancer_env
-                        source cancer_env/bin/activate
-                        pip install --upgrade pip
-                        pip install -r requirements.txt
-                    """
-                }
-            }
-        }
-
         stage('Build and Push Docker Image') {
             steps {
                 script {
