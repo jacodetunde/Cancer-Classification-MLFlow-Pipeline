@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cancer-app
+  labels:
+    app: cancer-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cancer-app
+  template:
+    metadata:
+      labels:
+        app: cancer-app
+    spec:
+      containers:
+      - name: ml-app
+        image: 369886907351.dkr.ecr.us-east-1.amazonaws.com/cancer-repo:replaceImageTag
+        ports:
+        - containerPort: 8000
