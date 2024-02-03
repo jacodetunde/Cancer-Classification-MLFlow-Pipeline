@@ -1,0 +1,83 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = '369886907351' // Replace with your AWS account ID
+        ECR_REPOSITORY_NAME = 'cancer-repo' // Replace with your ECR repository name
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}"
+        CLUSTER_NAME = 'mlapps-cluster' // Replace with your EKS cluster name
+    }
+
+    stages {
+        stage('Setup') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Continuous Integration') {
+            steps {
+                script {
+                    sh """
+                        python3 -m venv venv
+                        source venv/bin/activate
+                        pip install --upgrade pip
+                        pip install -r requirements.txt
+                    """
+                }
+            }
+        }
+
+        stage('Build and Push Docker Image') {
+            steps {
+                script {
+                    sh """
+                        aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                        docker build -t ${ECR_REPOSITORY_NAME}:${IMAGE_TAG} .
+                        docker tag ${ECR_REPOSITORY_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}:${IMAGE_TAG}
+                        docker push ${ECR_REGISTRY}:${IMAGE_TAG}
+                        docker rmi ${ECR_REGISTRY}:${IMAGE_TAG}
+                        docker rmi ${ECR_REPOSITORY_NAME}:${IMAGE_TAG}
+                    """
+                }
+            }
+        }
+
+        stage('Install kubectl') {
+            steps {
+                script {
+                    sh '''
+                        KUBECTL_VERSION="v1.24.0"
+                        curl -LO "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+                        chmod +x ./kubectl
+                        sudo mv ./kubectl /usr/local/bin/kubectl
+                    '''
+                }
+            }
+        }
+
+        stage("Deploy to EKS") {
+            steps {
+                script {
+                    withAWS(credentials: 'myCredentials') {
+                        sh """
+                            aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+                            sed -i 's/replaceImageTag/${IMAGE_TAG}/g' k8s-manifest/deployment.yaml
+                            kubectl apply -f k8s-manifest/deployment.yaml
+                            kubectl apply -f k8s-manifest/service.yaml
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean the workspace after the pipeline is finished
+            cleanWs()
+        }
+    }
+}
